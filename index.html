@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#176b55"><title>Water Buddy</title>
+<style>body{font:16px system-ui,sans-serif;background:#f5f8f4;color:#18382e;margin:0}main{max-width:680px;margin:auto;padding:20px}h1{margin-bottom:0}p{line-height:1.5}.card{background:white;padding:18px;border-radius:16px;margin:14px 0;box-shadow:0 1px 5px #0001}label{display:block;font-weight:650;margin:12px 0 5px}input,select,button{box-sizing:border-box;font:inherit;padding:12px;border-radius:9px;border:1px solid #b7c9bf;width:100%}button{background:#176b55;color:white;border:0;font-weight:700;cursor:pointer}button:disabled{opacity:.5}.row{display:flex;gap:8px}.row>*{flex:1;min-width:0}.secondary{background:#e8f1ec;color:#185742}.muted{color:#53685e;font-size:.9rem}.error{color:#a22}.result{background:#eaf6ed;padding:14px;border-radius:12px;margin:10px 0}.hidden{display:none}small{display:block;color:#53685e}summary{cursor:pointer;font-weight:650}#suggestions button{background:white;color:#18382e;border:1px solid #cbd7ce;text-align:left;margin:2px 0}#status{min-height:1.5em}</style></head>
+<body><main><h1>💧 Water Buddy</h1><p class="muted">Garden irrigation planning · preliminary estimates, not calibrated prescriptions</p>
+<section class="card"><label for="mode">What are you watering?</label><select id="mode"><option value="single">One plant</option><option value="area">Planting area</option></select>
+<label for="plant">Plant name</label><input id="plant" placeholder="Rose, Rosa, basil, citrus…" autocomplete="off"><div id="suggestions"></div><small>Suggestions are optional. Free-text always works.</small>
+<label for="location">Garden location</label><div class="row"><input id="location" value="North Torrance, CA" placeholder="City, ZIP or address"><button class="secondary" id="gps" style="flex:0 0 55px" type="button" aria-label="Use my location">⌖</button></div><small id="locationStatus">Manual location is supported. Location does not yet automatically determine ET.</small>
+<label for="exposure">Exposure</label><select id="exposure"><option>Unknown</option><option>North-facing</option><option>South-facing</option><option>East-facing</option><option>West-facing</option><option>Full sun</option><option>Part shade</option><option>Full shade</option></select>
+<details><summary>Improve accuracy (optional)</summary><label for="eto">Reference ET (inches/week)</label><input id="eto" type="number" min="0.01" max="5" step=".05" value="1.0"><small>Illustrative default only; replace with local weekly ET for real planning.</small>
+<label for="factor">Plant water-use factor</label><input id="factor" type="number" min=".1" max="1.5" step=".05" value=".5"><small>Illustrative default; not a validated species coefficient.</small>
+<label for="area">Irrigated area (square feet)</label><input id="area" type="number" min="1" value="16">
+<label for="eff">Drip application efficiency (0–1)</label><input id="eff" type="number" min=".1" max="1" step=".05" value=".85">
+<label for="emitters">Number of emitters</label><input id="emitters" type="number" min="1" value="2">
+<label for="gph">Flow per emitter (gallons/hour)</label><input id="gph" type="number" min=".01" step=".1" value=".5">
+<label for="days">Watering sessions per week</label><input id="days" type="number" min="1" max="7" value="2"></details>
+<button id="calculate" type="button" style="margin-top:18px">Calculate watering plan</button><p id="status" role="status" aria-live="polite">App ready — enter a plant and calculate.</p></section>
+<section id="results" class="card hidden" tabindex="-1"><h2>Your watering plan</h2><div id="summary"></div><div class="row"><div class="result"><b>Drip irrigation</b><div id="drip"></div></div><div class="result"><b>Hand watering</b><div id="hand"></div></div></div><p class="muted" id="assumptions"></p><label for="other">Other water delivery</label><select id="other"><option>Drip irrigation</option><option>Hand watering</option><option>Soaker hose</option><option>Micro-sprayers</option><option>Sprinklers</option></select><small>Other methods require measured flow and distribution data before a runtime can be calculated.</small></section>
+</main><script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+const plants=['Rose (Rosa)','Rosemary (Salvia rosmarinus)','Basil (Ocimum basilicum)','Meyer lemon (Citrus × meyeri)','Lavender (Lavandula angustifolia)','Peach (Prunus persica)','Thyme (Thymus vulgaris)','Gardenia (Gardenia jasminoides)'];
+$('plant').addEventListener('input',()=>{const q=$('plant').value.trim().toLowerCase();$('suggestions').replaceChildren();if(q.length<2)return;plants.filter(p=>p.toLowerCase().includes(q)).slice(0,5).forEach(p=>{const b=document.createElement('button');b.type='button';b.textContent=p;b.addEventListener('click',()=>{$('plant').value=p;$('suggestions').replaceChildren()});$('suggestions').append(b)})});
+$('mode').addEventListener('change',()=>{$('area').value=$('mode').value==='area'?100:16});
+$('gps').addEventListener('click',()=>{if(!navigator.geolocation){$('locationStatus').textContent='Geolocation unavailable. Enter a location manually.';return;}$('locationStatus').textContent='Requesting location permission…';navigator.geolocation.getCurrentPosition(p=>{$('location').value=p.coords.latitude.toFixed(5)+', '+p.coords.longitude.toFixed(5);$('locationStatus').textContent='Device coordinates obtained. ET lookup is not connected yet.'},e=>{$('locationStatus').textContent='Location unavailable or denied. Manual entry still works.'},{timeout:10000})});
+$('calculate').addEventListener('click',()=>{const status=$('status');status.textContent='Calculating…';$('results').classList.add('hidden');try{
+const plant=$('plant').value.trim();if(!plant)throw Error('Enter a plant name (autocomplete selection is not required).');
+const val=id=>Number($(id).value);const eto=val('eto'),factor=val('factor'),area=val('area'),eff=val('eff'),emitters=val('emitters'),gph=val('gph'),days=val('days');
+if(![eto,factor,area,eff,emitters,gph,days].every(x=>Number.isFinite(x)&&x>0)||eff>1||days>7)throw Error('Check optional numbers: all must be positive, efficiency at most 1, sessions 1–7.');
+const net=eto*factor*area*.623;const gross=net/eff;const per=gross/days;const minutes=per/(emitters*gph)*60;
+$('summary').textContent=plant+' · '+($('location').value.trim()||'location unspecified')+' · '+$('mode').selectedOptions[0].textContent;
+$('drip').textContent=minutes.toFixed(0)+' min/session · '+days+'×/week';
+$('hand').textContent=per.toFixed(1)+' gallons/session · '+days+'×/week';
+$('assumptions').textContent='Illustrative estimate: '+net.toFixed(1)+' net gallons/week; '+gross.toFixed(1)+' gallons/week adjusted for assumed '+Math.round(eff*100)+'% irrigation efficiency. Hand-watering volume uses the same efficiency assumption for comparison. ET '+eto+' in/week, factor '+factor+', '+area+' ft², '+emitters+' emitters at '+gph+' GPH. Exposure, soil, plant establishment and actual weather are NOT modeled yet. Do not use as a final irrigation prescription.';
+$('results').classList.remove('hidden');status.textContent='Calculation complete — results below.';$('results').scrollIntoView({behavior:'smooth',block:'start'});
+}catch(e){status.textContent='Unable to calculate: '+e.message;status.className='error';}});
+})();
+</script></body></html>
